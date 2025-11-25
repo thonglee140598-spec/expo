@@ -1,0 +1,96 @@
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import { Html5Qrcode } from 'html5-qrcode';
+
+function App(){
+  const [items, setItems] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [scanMode, setScanMode] = useState(false);
+
+  useEffect(()=>{ fetchItems(); }, []);
+
+  const fetchItems = async ()=> {
+    const res = await axios.get('http://localhost:4000/api/items');
+    setItems(res.data);
+  };
+
+  const createSample = async ()=>{
+    await axios.post('http://localhost:4000/api/items', {
+      sku: 'SKU-'+Math.floor(Math.random()*1000),
+      name: 'Sample item ' + Math.floor(Math.random()*100),
+      qty: 10,
+      location: 'A1'
+    });
+    fetchItems();
+  };
+
+  const startScan = ()=> {
+    setScanMode(true);
+    const html5QrCode = new Html5Qrcode("reader");
+    Html5Qrcode.getCameras().then(cameras => {
+      if (cameras && cameras.length) {
+        const cameraId = cameras[0].id;
+        html5QrCode.start(
+          cameraId, 
+          { fps: 10, qrbox: 250 },
+          (decodedText, decodedResult) => {
+            // decodedText -> we assume it's an item id or sku
+            console.log('decoded', decodedText);
+            // try to find item by sku or id
+            const found = items.find(i => i.sku === decodedText || i.id === decodedText);
+            if(found) setSelected(found);
+            html5QrCode.stop().then(()=> setScanMode(false));
+          },
+          (errorMessage) => {
+            // ignore per-frame errors
+          }
+        ).catch(err => { console.error(err); setScanMode(false); });
+      }
+    }).catch(err => { console.error(err); setScanMode(false); });
+  };
+
+  return (
+    <div style={{ padding:20, fontFamily: 'sans-serif' }}>
+      <h2>Warehouse app (300mÂ²)</h2>
+      <button onClick={createSample}>Create sample item</button>{' '}
+      <button onClick={fetchItems}>Refresh</button>{' '}
+      <button onClick={()=> startScan()}>Scan QR / Barcode</button>
+      <div style={{ marginTop:10 }}>
+        {scanMode && <div id="reader" style={{ width:300, height:300 }}></div>}
+      </div>
+      <hr />
+      <div style={{ display:'flex', gap:20 }}>
+        <div style={{ flex:1 }}>
+          <h3>Items</h3>
+          <table border="1" cellPadding="6" style={{ width:'100%' }}>
+            <thead><tr><th>SKU</th><th>Name</th><th>Qty</th><th>Location</th></tr></thead>
+            <tbody>
+              {items.map(it=>(
+                <tr key={it.id} onClick={()=>setSelected(it)} style={{ cursor:'pointer' }}>
+                  <td>{it.sku}</td><td>{it.name}</td><td>{it.qty}</td><td>{it.location}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ width:320 }}>
+          <h3>Detail</h3>
+          {selected ? (
+            <div>
+              <div><b>SKU:</b> {selected.sku}</div>
+              <div><b>Name:</b> {selected.name}</div>
+              <div><b>Qty:</b> {selected.qty}</div>
+              <div><b>Location:</b> {selected.location}</div>
+              <div style={{ marginTop:8 }}>
+                <button onClick={async ()=>{ await axios.post(`http://localhost:4000/api/items/${selected.id}/receive`, { qty: 1 }); fetchItems(); }}>Receive +1</button>{' '}
+                <button onClick={async ()=>{ try{ await axios.post(`http://localhost:4000/api/items/${selected.id}/ship`, { qty: 1 }); fetchItems(); }catch(e){ alert(e.response?.data?.error || e.message); } }}>Ship -1</button>
+              </div>
+            </div>
+          ) : <div>Chá»n 1 item Äá» xem</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
